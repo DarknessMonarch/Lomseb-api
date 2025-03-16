@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f8f7f7; 
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            border-radius: 8px;
+            box-shadow: rgba(149, 157, 165, 0.2) 0px 8px 24px; 
+            background-color: #ffffff; 
+        }
+
+        .header {
+            padding: 25px;
+            text-align: center;
+            background-color: #f8f7f7; 
+            border-bottom: 1px solid rgba(149, 157, 165, 0.2); 
+        }
+
+        .header img {
+            height: 100px;
+            object-fit: cover;
+            object-position: center;
+        }
+
+        .content {
+            padding: 35px;
+            background-color: #ffffff; 
+            color: #383E49; 
+        }
+
+        .admin-box {
+            background-color: #f8f7f7; 
+            border-radius: 8px;
+            padding: 25px;
+            margin: 20px 0;
+            border-left: 4px solid #eb452bff; 
+            box-shadow: rgb(204, 219, 232) 3px 3px 6px 0px inset, rgba(255, 255, 255, 0.5) -3px -3px 6px 1px inset;
+            text-align: center;
+        }
+
+        .admin-message {
+            font-size: 24px;
+            font-weight: bold;
+            color: #eb452bff;
+            padding: 15px 0;
+        }
+
+        .admin-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #eb452bff;
+            color: #ffffff;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+
+        h3 {
+            color: #eb452bff; 
+            margin: 0 0 15px;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        p {
+            line-height: 1.6;
+            color: #383E49; 
+            margin: 15px 0;
+            font-size: 16px;
+        }
+
+        ul {
+            margin: 20px 0;
+            padding-left: 20px;
+        }
+
+        li {
+            margin-bottom: 10px;
+            color: #383E49;
+        }
+
+        .content-foot {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #909299; 
+        }
+
+        .content-foot span {
+            color: #eb452bff; 
+            font-weight: 600;
+        }
+
+        .footer {
+            padding: 25px;
+            color: #909299; 
+            text-align: center;
+            background-color: #f8f7f7; 
+            border-bottom-left-radius: 8px;
+            border-bottom-right-radius: 8px;
+            border-top: 1px solid rgba(149, 157, 165, 0.2); 
+        }
+        
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #eb452b;
+            background: linear-gradient(90deg,
+                    rgba(235, 69, 43, 1) 34%,
+                    rgba(247, 145, 40, 1) 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-top: 15px;
+            transition: background-color 0.2s;
+        }
+        
+       
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://raw.githubusercontent.com/DarknessMonarch/Lomseb/refs/heads/master/public/assets/logo.png"
+                alt="lomseb logo">
+        </div>
+        <div class="content">
+            <p>Hello {{username}},</p>
+            <div class="admin-box">
+                <h3>Administrator Access {{status}}</h3>
+                <div class="admin-badge">ADMIN</div>
+                <div class="admin-message">You now have administrative privileges!</div>
+            </div>
+            <p>As an administrator, you now have access to the following features:</p>
+            <ul>
+                <li>Complete access to all system account, dashbard and report features</li>
+                <li>User management (create, edit, delete user accounts)</li>
+                <li>Generate and access all sales and analytics reports</li>
+                <li>Modify system-wide content and settings</li>
+                <li>View detailed transaction logs </li>
+            </ul>
+            <p>Please use these administrative privileges responsibly. If you have any questions about your new role, contact our support team.</p>
+            <div class="content-foot">
+                <p>Best regards,<br><span>Lomseb Team</span></p>
+            </div>
+        </div>
+        <div class="footer">
+            <p>Contact: lomseb72@gmail.com</p>
+            <p>You are receiving this email because you received a contact form submission</p>
+            <p>© 2025 lomseb.swiftsyn.com. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+
+</html>

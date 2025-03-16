@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f8f7f7; 
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            border-radius: 8px;
+            box-shadow: rgba(149, 157, 165, 0.2) 0px 8px 24px; 
+            background-color: #ffffff; 
+        }
+
+        .header {
+            padding: 25px;
+            text-align: center;
+            background-color: #f8f7f7; 
+            border-bottom: 1px solid rgba(149, 157, 165, 0.2); 
+        }
+
+        .header img {
+            height: 100px;
+            object-fit: cover;
+            object-position: center;
+        }
+
+        .content {
+            padding: 35px;
+            background-color: #ffffff; 
+            color: #383E49; 
+        }
+
+        .payment-info-box {
+            background-color: #f8f7f7; 
+            border-radius: 8px;
+            padding: 25px;
+            margin: 20px 0;
+            border-left: 4px solid #eb452b; 
+            box-shadow: rgb(204, 219, 232) 3px 3px 6px 0px inset, rgba(255, 255, 255, 0.5) -3px -3px 6px 1px inset;
+        }
+
+        .debt-id {
+            font-size: 18px;
+            font-weight: bold;
+            color: #eb452b;
+            padding: 10px 0;
+        }
+
+        .due-date {
+            color: #606060;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .amount-due {
+            font-size: 28px;
+            font-weight: bold;
+            color: #383E49;
+            margin: 15px 0;
+        }
+
+        h3 {
+            color: #eb452b; 
+            margin: 0 0 15px;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        p {
+            line-height: 1.6;
+            color: #383E49; 
+            margin: 15px 0;
+            font-size: 16px;
+        }
+
+        .order-reference {
+            background-color: #f8f7f7;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .content-foot {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #909299; 
+        }
+
+        .content-foot span {
+            color: #eb452b; 
+            font-weight: 600;
+        }
+
+        .footer {
+            padding: 25px;
+            color: #909299; 
+            text-align: center;
+            background-color: #f8f7f7; 
+            border-bottom-left-radius: 8px;
+            border-bottom-right-radius: 8px;
+            border-top: 1px solid rgba(149, 157, 165, 0.2); 
+        }
+
+        .social-icons {
+            padding: 20px 0;
+        }
+
+        .social-links {
+            display: inline-block;
+            margin: 0 8px;
+        }
+
+        .social-image {
+            width: 32px;
+            height: 32px;
+            opacity: 0.9;
+            transition: opacity 0.2s;
+        }
+
+        .social-image:hover {
+            opacity: 1;
+        }
+
+        .footer p {
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #eb452b;
+            background: linear-gradient(90deg,
+                    rgba(235, 69, 43, 1) 34%,
+                    rgba(247, 145, 40, 1) 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-top: 20px;
+            transition: background-color 0.2s;
+            text-align: center;
+        }
+        
+
+        
+        .reminder-badge {
+            background-color: #f73535;
+            color: white;
+            border-radius: 20px;
+            padding: 5px 15px;
+            display: inline-block;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://raw.githubusercontent.com/DarknessMonarch/Lomseb/refs/heads/master/public/assets/logo.png"
+                alt="lomseb logo">
+        </div>
+        <div class="content">
+            <p>Hello {{username}},</p>
+            <div class="reminder-badge">Payment Reminder</div>
+            <h3>Your Payment Is Due Soon</h3>
+            <p>We'd like to remind you that you have an outstanding payment due for your previous order with us.</p>
+            
+            <div class="payment-info-box">
+                <h3>Payment Details</h3>
+                <div class="debt-id">Debt ID: {{debtId}}</div>
+                <div class="due-date">Due Date: {{dueDate}}</div>
+                
+                <p>Amount Due:</p>
+                <div class="amount-due">${{amount}}</div>
+                
+                <p>Please make your payment at your earliest convenience to avoid any late fees or service interruptions.</p>
+                
+                <!-- <a href="{{paymentUrl}}" class="button">Make Payment Now</a> -->
+            </div>
+            
+            <div class="order-reference">
+                <h3>Order Reference</h3>
+                <p><strong>Order ID:</strong> {{orderId}}</p>
+            </div>
+            
+            <p>If you have already made this payment, please disregard this reminder. If you're experiencing any difficulties with payment or need to discuss payment options, please contact our customer service team.</p>
+            <div class="content-foot">
+                <p>Thank you for your prompt attention to this matter.<br><span>Lomseb Team</span></p>
+            </div>
+        </div>
+        <div class="footer">
+            <p>Contact: lomseb72@gmail.com</p>
+            <p>You are receiving this email because you received a contact form submission</p>
+            <p>© 2025 lomseb.swiftsyn.com. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+
+</html>

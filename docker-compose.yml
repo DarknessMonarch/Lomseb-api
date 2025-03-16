@@ -1,0 +1,20 @@
+services:
+  bilkro_api:
+    container_name: bilkro_api
+    image: bilkro_api
+    restart: unless-stopped
+    build: .
+    networks: 
+      - nginxproxymanager_default
+    env_file:
+      - .env
+  
+    ports:
+      - "3550:4000"
+    command: ["node", "app.js"]
+  
+networks:
+  nginxproxymanager_default:
+    name: nginxproxymanager_default
+    external: true
+

@@ -1,7 +1,7 @@
 services:
-  bilkro_api:
-    container_name: bilkro_api
-    image: bilkro_api
+  lomseb_api:
+    container_name: lomseb_api
+    image: lomseb_api
     restart: unless-stopped
     build: .
     networks: 
@@ -10,7 +10,7 @@ services:
       - .env
   
     ports:
-      - "3550:4000"
+      - "3550:5000"
     command: ["node", "app.js"]
   
 networks:

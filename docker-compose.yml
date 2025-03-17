@@ -10,7 +10,7 @@ services:
       - .env
   
     ports:
-      - "3550:5000"
+      - "3660:5000"
     command: ["node", "app.js"]
   
 networks:

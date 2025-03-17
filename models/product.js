@@ -33,7 +33,7 @@ const productSchema = new Schema({
   category: {
     type: String,
     required: true,
-    enum: ['tires', 'electronics', 'accessories', 'parts', 'tools', 'other']
+    enum: ['tires', 'electronics', 'accessories', 'parts', 'tools', 'other', 'crude', 'gasoline', 'diesel', 'lubricants', 'additives']
   },
   buyingPrice: {
     type: Number,
@@ -53,7 +53,7 @@ const productSchema = new Schema({
   unit: {
     type: String,
     default: 'pcs',
-    enum: ['pcs', 'kg', 'boxes', 'liters', 'sets']
+    enum: ['pcs', 'kg', 'boxes', 'liters', 'sets', 'barrels', 'gallons', 'tons', 'cases']
   },
   supplierName: {
     type: String,

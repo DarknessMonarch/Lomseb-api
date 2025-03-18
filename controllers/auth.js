@@ -78,12 +78,12 @@ exports.register = async (req, res) => {
       });
     }
 
-    if (!validatePassword(password)) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Password must be 8+ characters with uppercase, lowercase, number, and special character'
-      });
-    }
+    // if (!validatePassword(password)) {
+    //   return res.status(400).json({
+    //     status: 'error',
+    //     message: 'Password must be 8+ characters with uppercase, lowercase, number, and special character'
+    //   });
+    // }
 
     // Check existing user
     const existingUser = await User.findOne({ email });
@@ -546,12 +546,12 @@ exports.updatePassword = async (req, res) => {
       });
     }
 
-    if (!validatePassword(newPassword)) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Password must be at least 8 characters long and include uppercase, lowercase, number, and special character'
-      });
-    }
+    // if (!validatePassword(newPassword)) {
+    //   return res.status(400).json({
+    //     status: 'error',
+    //     message: 'Password must be at least 8 characters long and include uppercase, lowercase, number, and special character'
+    //   });
+    // }
 
     user.password = newPassword;
     await user.save();
@@ -667,12 +667,12 @@ exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
 
-    if (!validatePassword(newPassword)) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Password must be at least 8 characters long and include uppercase, lowercase, number, and special character.'
-      });
-    }
+    // if (!validatePassword(newPassword)) {
+    //   return res.status(400).json({
+    //     status: 'error',
+    //     message: 'Password must be at least 8 characters long and include uppercase, lowercase, number, and special character.'
+    //   });
+    // }
 
     const user = await User.findOne({
       resetPasswordToken: token,

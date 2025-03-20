@@ -12,6 +12,7 @@ const bodyParser = require("body-parser");
 const authRoute = require("./routes/auth");
 const cartRoutes = require('./routes/cart');
 const notificationRoute = require("./routes/notification");
+const expenditureRoute = require("./routes/expenditure");
 const productRoute = require("./routes/product");
 const reportRoute = require("./routes/report");
 const debtRoute = require("./routes/debt");
@@ -55,6 +56,7 @@ app.use("/api/v1/cart", cartRoutes);
 app.use("/api/v1/debt", debtRoute);
 app.use("/api/v1/product", productRoute);
 app.use("/api/v1/reports", reportRoute);
+app.use("/api/v1/expenditures", expenditureRoute);
 app.use("/api/v1/notification", notificationRoute);
 
 

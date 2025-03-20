@@ -70,6 +70,33 @@ const categoryDetailSchema = new Schema({
   }
 });
 
+// Define expenditure item schema for reports
+const expenditureItemSchema = new Schema({
+  expenditureId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Expenditure',
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true,
+    min: 0.01
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  category: {
+    type: String,
+    required: true,
+    enum: ['salary', 'supplies', 'utilities', 'maintenance', 'miscellaneous']
+  },
+  employeeName: {
+    type: String,
+    required: true
+  }
+});
+
 // Define main report schema
 const reportSchema = new Schema({
   saleId: {
@@ -83,6 +110,7 @@ const reportSchema = new Schema({
     required: true
   },
   items: [reportItemSchema],
+  expenditures: [expenditureItemSchema], // Added expenditure items array
   totalRevenue: {
     type: Number,
     required: true,
@@ -97,9 +125,26 @@ const reportSchema = new Schema({
     type: Number,
     required: true
   },
+  totalExpenditures: { // Added total expenditures field
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  netProfit: { // Added net profit (considering expenditures)
+    type: Number,
+    required: true
+  },
   categories: {
     type: Map,
     of: categoryDetailSchema,
+    default: {}
+  },
+  expenditureCategories: { // Added expenditure categories mapping
+    type: Map,
+    of: {
+      count: Number,
+      amount: Number
+    },
     default: {}
   },
   paymentMethod: {
@@ -122,6 +167,11 @@ const reportSchema = new Schema({
   user: {
     type: Schema.Types.ObjectId,
     ref: 'User'
+  },
+  type: { // Added to distinguish between sales and expenditure reports
+    type: String,
+    enum: ['sale', 'expenditure', 'mixed'],
+    default: 'sale'
   }
 }, {
   timestamps: true
@@ -132,7 +182,8 @@ reportSchema.statics.getSalesReports = async function({
   startDate, 
   endDate, 
   period = 'weekly', 
-  category = null 
+  category = null,
+  includeExpenditures = false // New parameter to include expenditures in the report
 }) {
   const match = {};
   
@@ -180,8 +231,8 @@ reportSchema.statics.getSalesReports = async function({
       };
   }
   
-  // Perform aggregation
-  const result = await this.aggregate([
+  // Base aggregation pipeline
+  const pipeline = [
     { $match: match },
     { 
       $group: {
@@ -193,10 +244,18 @@ reportSchema.statics.getSalesReports = async function({
         earliestDate: { $min: "$date" },
         latestDate: { $max: "$date" }
       }
-    },
-    { 
-      $sort: { _id: 1 }
-    },
+    }
+  ];
+  
+  // Add expenditure aggregation if requested
+  if (includeExpenditures) {
+    pipeline[1].$group.totalExpenditures = { $sum: "$totalExpenditures" };
+    pipeline[1].$group.netProfit = { $sum: "$netProfit" };
+  }
+  
+  // Sort and project fields
+  pipeline.push(
+    { $sort: { _id: 1 } },
     {
       $project: {
         period: "$_id",
@@ -209,7 +268,16 @@ reportSchema.statics.getSalesReports = async function({
         _id: 0
       }
     }
-  ]);
+  );
+  
+  // Add expenditure fields to projection if requested
+  if (includeExpenditures) {
+    pipeline[pipeline.length - 1].$project.totalExpenditures = 1;
+    pipeline[pipeline.length - 1].$project.netProfit = 1;
+  }
+  
+  // Perform aggregation
+  const result = await this.aggregate(pipeline);
   
   return result;
 };
@@ -481,6 +549,136 @@ reportSchema.statics.getPaymentMethodReports = async function({
   return result;
 };
 
+// Get expenditure reports - New method
+reportSchema.statics.getExpenditureReports = async function({
+  startDate,
+  endDate,
+  period = 'weekly',
+  category = null
+}) {
+  const match = {};
+  
+  // Date filtering
+  if (startDate || endDate) {
+    match.date = {};
+    if (startDate) match.date.$gte = new Date(startDate);
+    if (endDate) match.date.$lte = new Date(endDate);
+  }
+  
+  // Only include reports with expenditures
+  match.totalExpenditures = { $gt: 0 };
+  
+  // Category filtering
+  if (category) {
+    match[`expenditureCategories.${category}`] = { $exists: true };
+  }
+  
+  // Set the grouping based on the period
+  let dateFormat;
+  switch (period.toLowerCase()) {
+    case 'daily':
+      dateFormat = { 
+        $dateToString: { format: "%Y-%m-%d", date: "$date" }
+      };
+      break;
+    case 'weekly':
+      dateFormat = { 
+        $dateToString: { 
+          format: "%Y-W%V", 
+          date: "$date"
+        }
+      };
+      break;
+    case 'monthly':
+      dateFormat = { 
+        $dateToString: { format: "%Y-%m", date: "$date" }
+      };
+      break;
+    case 'yearly':
+      dateFormat = { 
+        $dateToString: { format: "%Y", date: "$date" }
+      };
+      break;
+    default:
+      dateFormat = { 
+        $dateToString: { format: "%Y-%m-%d", date: "$date" }
+      };
+  }
+  
+  // Perform aggregation
+  const result = await this.aggregate([
+    { $match: match },
+    { 
+      $group: {
+        _id: dateFormat,
+        totalExpenditures: { $sum: "$totalExpenditures" },
+        expenditureCount: { $sum: { $size: "$expenditures" } },
+        earliestDate: { $min: "$date" },
+        latestDate: { $max: "$date" }
+      }
+    },
+    { 
+      $sort: { _id: 1 }
+    },
+    {
+      $project: {
+        period: "$_id",
+        totalExpenditures: 1,
+        expenditureCount: 1,
+        earliestDate: 1,
+        latestDate: 1,
+        _id: 0
+      }
+    }
+  ]);
+  
+  return result;
+};
+
+// Get expenditure category reports - New method
+reportSchema.statics.getExpenditureCategoryReports = async function({
+  startDate,
+  endDate,
+  limit = 10
+}) {
+  const match = {};
+  
+  // Date filtering
+  if (startDate || endDate) {
+    match.date = {};
+    if (startDate) match.date.$gte = new Date(startDate);
+    if (endDate) match.date.$lte = new Date(endDate);
+  }
+  
+  // Only include reports with expenditures
+  match.totalExpenditures = { $gt: 0 };
+  
+  // Get expenditures by category
+  const result = await this.aggregate([
+    { $match: match },
+    { $unwind: "$expenditures" },
+    {
+      $group: {
+        _id: "$expenditures.category",
+        totalAmount: { $sum: "$expenditures.amount" },
+        count: { $sum: 1 }
+      }
+    },
+    { $sort: { totalAmount: -1 } },
+    { $limit: limit },
+    {
+      $project: {
+        category: "$_id",
+        totalAmount: 1,
+        count: 1,
+        _id: 0
+      }
+    }
+  ]);
+  
+  return result;
+};
+
 // Get inventory valuation
 reportSchema.statics.getInventoryValuationReport = async function() {
   const Product = mongoose.model('Product');
@@ -545,6 +743,167 @@ reportSchema.statics.exportSalesReports = async function(options) {
     exportTime: new Date(),
     format: options.format || 'csv'
   };
+};
+
+// New method to handle adding expenditures to reports
+reportSchema.statics.addExpenditureToReport = async function(expenditure, userId) {
+  // Find most recent report or create a new one
+  const latestReport = await this.findOne({}).sort({ date: -1 });
+  
+  if (latestReport) {
+    // Create expenditure item
+    const expenditureItem = {
+      expenditureId: expenditure._id,
+      amount: expenditure.amount,
+      description: expenditure.description,
+      category: expenditure.category,
+      employeeName: expenditure.employeeName
+    };
+    
+    // Update expenditure categories
+    const categoryKey = expenditure.category;
+    let categoryData = latestReport.expenditureCategories.get(categoryKey) || { count: 0, amount: 0 };
+    categoryData.count += 1;
+    categoryData.amount += expenditure.amount;
+    latestReport.expenditureCategories.set(categoryKey, categoryData);
+    
+    // Update report totals
+    latestReport.expenditures.push(expenditureItem);
+    latestReport.totalExpenditures += expenditure.amount;
+    latestReport.netProfit = latestReport.totalProfit - latestReport.totalExpenditures;
+    
+    // Update report type if needed
+    if (latestReport.type === 'sale') {
+      latestReport.type = 'mixed';
+    }
+    
+    await latestReport.save();
+    return latestReport;
+  } else {
+    // Create new report with just the expenditure
+    const newReport = new this({
+      date: new Date(),
+      items: [],
+      expenditures: [{
+        expenditureId: expenditure._id,
+        amount: expenditure.amount,
+        description: expenditure.description,
+        category: expenditure.category,
+        employeeName: expenditure.employeeName
+      }],
+      totalRevenue: 0,
+      totalCost: 0,
+      totalProfit: 0,
+      totalExpenditures: expenditure.amount,
+      netProfit: -expenditure.amount,
+      expenditureCategories: new Map([
+        [expenditure.category, { count: 1, amount: expenditure.amount }]
+      ]),
+      paymentMethod: 'expenditure',
+      paymentStatus: 'paid',
+      amountPaid: 0,
+      remainingBalance: 0,
+      user: userId,
+      type: 'expenditure'
+    });
+    
+    await newReport.save();
+    return newReport;
+  }
+};
+
+// New method to get comprehensive P&L report
+reportSchema.statics.getProfitAndLossReport = async function({
+  startDate,
+  endDate,
+  period = 'monthly'
+}) {
+  const match = {};
+  
+  // Date filtering
+  if (startDate || endDate) {
+    match.date = {};
+    if (startDate) match.date.$gte = new Date(startDate);
+    if (endDate) match.date.$lte = new Date(endDate);
+  }
+  
+  // Set the grouping based on the period
+  let dateFormat;
+  switch (period.toLowerCase()) {
+    case 'daily':
+      dateFormat = { 
+        $dateToString: { format: "%Y-%m-%d", date: "$date" }
+      };
+      break;
+    case 'weekly':
+      dateFormat = { 
+        $dateToString: { 
+          format: "%Y-W%V", 
+          date: "$date"
+        }
+      };
+      break;
+    case 'monthly':
+      dateFormat = { 
+        $dateToString: { format: "%Y-%m", date: "$date" }
+      };
+      break;
+    case 'yearly':
+      dateFormat = { 
+        $dateToString: { format: "%Y", date: "$date" }
+      };
+      break;
+    default:
+      dateFormat = { 
+        $dateToString: { format: "%Y-%m-%d", date: "$date" }
+      };
+  }
+  
+  // Perform aggregation
+  const result = await this.aggregate([
+    { $match: match },
+    { 
+      $group: {
+        _id: dateFormat,
+        totalRevenue: { $sum: "$totalRevenue" },
+        totalCost: { $sum: "$totalCost" },
+        grossProfit: { $sum: "$totalProfit" },
+        totalExpenditures: { $sum: "$totalExpenditures" },
+        netProfit: { $sum: "$netProfit" },
+        reportCount: { $sum: 1 }
+      }
+    },
+    { 
+      $sort: { _id: 1 }
+    },
+    {
+      $project: {
+        period: "$_id",
+        totalRevenue: 1,
+        totalCost: 1,
+        grossProfit: 1,
+        totalExpenditures: 1,
+        netProfit: 1,
+        grossMargin: { 
+          $cond: [
+            { $eq: ["$totalRevenue", 0] },
+            0,
+            { $multiply: [{ $divide: ["$grossProfit", "$totalRevenue"] }, 100] }
+          ]
+        },
+        netMargin: { 
+          $cond: [
+            { $eq: ["$totalRevenue", 0] },
+            0,
+            { $multiply: [{ $divide: ["$netProfit", "$totalRevenue"] }, 100] }
+          ]
+        },
+        _id: 0
+      }
+    }
+  ]);
+  
+  return result;
 };
 
 module.exports = mongoose.model('Report', reportSchema);

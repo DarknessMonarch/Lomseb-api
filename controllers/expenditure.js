@@ -21,23 +21,33 @@ exports.createExpenditure = async (req, res) => {
       });
     }
 
-    // Create new expenditure
+    // Create new expenditure object
     const expenditure = new Expenditure({
       amount,
       description,
       employeeName,
       employeeId: employeeId || req.user._id, 
       category,
-      notes: notes || '',
-      status: 'pending' 
+      notes: notes || ''
     });
+
+    // Automatically approve if amount is $100 or less
+    if (amount <= 100) {
+      expenditure.status = 'approved';
+      expenditure.approvedBy = req.user._id;
+      expenditure.approvalDate = new Date();
+    } else {
+      expenditure.status = 'pending';
+    }
 
     // Save the expenditure
     await expenditure.save();
 
     return res.status(201).json({
       success: true,
-      message: 'Expenditure created successfully',
+      message: amount <= 100 
+        ? 'Expenditure created and automatically approved' 
+        : 'Expenditure created successfully',
       data: expenditure
     });
   } catch (error) {
@@ -163,15 +173,33 @@ exports.updateExpenditure = async (req, res) => {
       });
     }
 
+    // Track if amount changed from >100 to ≤100 or vice versa
+    const wasOver100 = expenditure.amount > 100;
+    const isNowOver100 = amount ? amount > 100 : wasOver100;
+    const amountStatusChange = wasOver100 !== isNowOver100;
+
     // Update the expenditure with new values
     if (amount) expenditure.amount = amount;
     if (description) expenditure.description = description;
     if (category) expenditure.category = category;
     if (notes) expenditure.notes = notes;
 
-    // Status changes need to be handled specially
-    if (status && status !== expenditure.status) {
-      // If status is changing to approved or completed, we need to handle the approval process
+    // Handle automatic approval if amount changed to ≤100
+    if (amountStatusChange) {
+      if (!isNowOver100 && expenditure.status === 'pending') {
+        // Auto-approve if amount changed to ≤100
+        expenditure.status = 'approved';
+        expenditure.approvedBy = req.user._id;
+        expenditure.approvalDate = new Date();
+      } else if (isNowOver100 && expenditure.status === 'approved' && 
+                !expenditure.manuallyApproved) {
+        // Reset to pending if amount changed to >100 and was auto-approved
+        expenditure.status = 'pending';
+        expenditure.approvedBy = null;
+        expenditure.approvalDate = null;
+      }
+    } else if (status && status !== expenditure.status) {
+      // Status changes need to be handled specially
       if (status === 'approved' || status === 'completed') {
         // Only admin can approve or complete
         if (!req.user.isAdmin) {
@@ -184,6 +212,11 @@ exports.updateExpenditure = async (req, res) => {
         expenditure.status = status;
         expenditure.approvedBy = req.user._id;
         expenditure.approvalDate = new Date();
+        
+        // Mark as manually approved
+        if (status === 'approved') {
+          expenditure.manuallyApproved = true;
+        }
 
         // If status is completed, we need to update the report
         if (status === 'completed') {
@@ -340,6 +373,7 @@ exports.approveExpenditure = async (req, res) => {
     expenditure.status = 'approved';
     expenditure.approvedBy = req.user._id;
     expenditure.approvalDate = new Date();
+    expenditure.manuallyApproved = true;
 
     await expenditure.save();
 
@@ -402,19 +436,14 @@ exports.getExpenditureStatistics = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    // Get total expenditures - only count completed ones for financial accuracy
     const totalAmount = await Expenditure.getTotalExpenditures(startDate, endDate);
     
-    // Get expenditures by category - include all statuses in summary
     const categorySummary = await Expenditure.getExpendituresByCategory(startDate, endDate);
     
-    // Get expenditures by employee - include all statuses in summary
     const employeeSummary = await Expenditure.getExpendituresByEmployee(startDate, endDate);
     
-    // Get pending expenditures count - IMPORTANT: removed date filtering to show all pending
     const pendingCount = await Expenditure.countDocuments({ 
       status: 'pending'
-      // Don't filter by date for pending items to ensure admin sees ALL pending
     });
     
     // Get all pending expenditures for the admin approval queue
@@ -432,6 +461,13 @@ exports.getExpenditureStatistics = async (req, res) => {
       approvalDate: { $gte: lastWeekDate }
     });
 
+    // Get auto-approved count
+    const autoApprovedCount = await Expenditure.countDocuments({
+      status: 'approved',
+      amount: { $lte: 100 },
+      manuallyApproved: { $ne: true }
+    });
+
     return res.status(200).json({
       success: true,
       data: {
@@ -440,7 +476,8 @@ exports.getExpenditureStatistics = async (req, res) => {
         employeeSummary,
         pendingCount,
         pendingExpenditures, 
-        recentCompletedCount
+        recentCompletedCount,
+        autoApprovedCount
       }
     });
   } catch (error) {

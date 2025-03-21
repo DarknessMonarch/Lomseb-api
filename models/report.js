@@ -168,7 +168,7 @@ const reportSchema = new Schema({
     type: Schema.Types.ObjectId,
     ref: 'User'
   },
-  type: { // Added to distinguish between sales and expenditure reports
+  type: { 
     type: String,
     enum: ['sale', 'expenditure', 'mixed'],
     default: 'sale'
@@ -177,17 +177,15 @@ const reportSchema = new Schema({
   timestamps: true
 });
 
-// Static methods for report aggregation
 reportSchema.statics.getSalesReports = async function({ 
   startDate, 
   endDate, 
   period = 'weekly', 
   category = null,
-  includeExpenditures = false // New parameter to include expenditures in the report
+  includeExpenditures = false
 }) {
   const match = {};
   
-  // Date filtering
   if (startDate || endDate) {
     match.date = {};
     if (startDate) match.date.$gte = new Date(startDate);
@@ -231,13 +229,12 @@ reportSchema.statics.getSalesReports = async function({
       };
   }
   
-  // Base aggregation pipeline
   const pipeline = [
     { $match: match },
     { 
       $group: {
         _id: dateFormat,
-        totalRevenue: { $sum: "$totalRevenue" },
+        totalRevenue: { $sum: { $subtract: ["$totalRevenue", { $cond: [includeExpenditures, "$totalExpenditures", 0] }] } },
         totalCost: { $sum: "$totalCost" },
         totalProfit: { $sum: "$totalProfit" },
         orderCount: { $sum: 1 },
@@ -247,7 +244,6 @@ reportSchema.statics.getSalesReports = async function({
     }
   ];
   
-  // Add expenditure aggregation if requested
   if (includeExpenditures) {
     pipeline[1].$group.totalExpenditures = { $sum: "$totalExpenditures" };
     pipeline[1].$group.netProfit = { $sum: "$netProfit" };
@@ -745,13 +741,10 @@ reportSchema.statics.exportSalesReports = async function(options) {
   };
 };
 
-// New method to handle adding expenditures to reports
 reportSchema.statics.addExpenditureToReport = async function(expenditure, userId) {
-  // Find most recent report or create a new one
   const latestReport = await this.findOne({}).sort({ date: -1 });
   
   if (latestReport) {
-    // Create expenditure item
     const expenditureItem = {
       expenditureId: expenditure._id,
       amount: expenditure.amount,
@@ -760,19 +753,17 @@ reportSchema.statics.addExpenditureToReport = async function(expenditure, userId
       employeeName: expenditure.employeeName
     };
     
-    // Update expenditure categories
     const categoryKey = expenditure.category;
     let categoryData = latestReport.expenditureCategories.get(categoryKey) || { count: 0, amount: 0 };
     categoryData.count += 1;
     categoryData.amount += expenditure.amount;
     latestReport.expenditureCategories.set(categoryKey, categoryData);
     
-    // Update report totals
     latestReport.expenditures.push(expenditureItem);
     latestReport.totalExpenditures += expenditure.amount;
+    latestReport.totalRevenue -= expenditure.amount;
     latestReport.netProfit = latestReport.totalProfit - latestReport.totalExpenditures;
     
-    // Update report type if needed
     if (latestReport.type === 'sale') {
       latestReport.type = 'mixed';
     }
@@ -812,7 +803,6 @@ reportSchema.statics.addExpenditureToReport = async function(expenditure, userId
   }
 };
 
-// New method to get comprehensive P&L report
 reportSchema.statics.getProfitAndLossReport = async function({
   startDate,
   endDate,
@@ -820,14 +810,12 @@ reportSchema.statics.getProfitAndLossReport = async function({
 }) {
   const match = {};
   
-  // Date filtering
   if (startDate || endDate) {
     match.date = {};
     if (startDate) match.date.$gte = new Date(startDate);
     if (endDate) match.date.$lte = new Date(endDate);
   }
   
-  // Set the grouping based on the period
   let dateFormat;
   switch (period.toLowerCase()) {
     case 'daily':
@@ -859,13 +847,12 @@ reportSchema.statics.getProfitAndLossReport = async function({
       };
   }
   
-  // Perform aggregation
   const result = await this.aggregate([
     { $match: match },
     { 
       $group: {
         _id: dateFormat,
-        totalRevenue: { $sum: "$totalRevenue" },
+        totalRevenue: { $sum: { $subtract: ["$totalRevenue", "$totalExpenditures"] } },
         totalCost: { $sum: "$totalCost" },
         grossProfit: { $sum: "$totalProfit" },
         totalExpenditures: { $sum: "$totalExpenditures" },

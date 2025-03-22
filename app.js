@@ -25,7 +25,7 @@ const WEBSITE = process.env.WEBSITE_LINK || 'https://lomseb.swiftsyn.com';
 const corsOptions = {
   origin: WEBSITE,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "cache-control", "pragma"],
   credentials: true,
   optionsSuccessStatus: 200,
 };
@@ -37,6 +37,7 @@ app.use(express.urlencoded({ extended: false, limit: '200mb' }));
 app.use(bodyParser.json());
 app.use(helmet());
 app.use(morgan("dev"));
+
 
 app.use(
   session({
@@ -70,6 +71,7 @@ app.options("/api/v1/auth/register", cors(corsOptions));
 app.options("/api/v1/product/", cors(corsOptions));
 app.options("/api/v1/product/:id", cors(corsOptions));
 app.options("/api/v1/cart/checkout", cors(corsOptions));
+app.options("/api/v1/expenditures/statistics", cors(corsOptions));
 
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);

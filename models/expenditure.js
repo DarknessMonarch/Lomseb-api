@@ -29,7 +29,7 @@ const expenditureSchema = new Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'completed'],
+    enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
   },
   approvedBy: {
@@ -51,9 +51,9 @@ const expenditureSchema = new Schema({
   receiptImage: {
     type: String
   },
-  reportId: {
-    type: Schema.Types.ObjectId,
-    ref: 'Report'
+  manuallyApproved: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
@@ -68,8 +68,8 @@ expenditureSchema.statics.getTotalExpenditures = async function(startDate, endDa
     if (endDate) match.date.$lte = new Date(endDate);
   }
   
-  // Include approved expenditures as well, not just completed
-  match.status = { $in: ['approved', 'completed'] };
+  // Only include approved expenditures
+  match.status = 'approved';
   
   const result = await this.aggregate([
     { $match: match },
@@ -125,7 +125,6 @@ expenditureSchema.statics.getExpendituresByEmployee = async function(startDate, 
     if (endDate) match.date.$lte = new Date(endDate);
   }
   
-  
   return this.aggregate([
     { $match: match },
     {
@@ -148,4 +147,5 @@ expenditureSchema.statics.getExpendituresByEmployee = async function(startDate, 
     { $sort: { totalAmount: -1 } }
   ]);
 };
+
 module.exports = mongoose.model('Expenditure', expenditureSchema);

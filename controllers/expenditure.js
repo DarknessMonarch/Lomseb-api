@@ -71,21 +71,45 @@ exports.getAllExpenditures = async (req, res) => {
       limit = 10
     } = req.query;
 
+
     const query = {};
 
-    // Apply filters
     if (startDate || endDate) {
       query.date = {};
-      if (startDate) query.date.$gte = new Date(startDate);
-      if (endDate) query.date.$lte = new Date(endDate);
+      if (startDate) {
+        const parsedStartDate = new Date(startDate);
+        if (!isNaN(parsedStartDate.getTime())) {
+          query.date.$gte = parsedStartDate;
+        } else {
+        }
+      }
+      if (endDate) {
+        const parsedEndDate = new Date(endDate);
+        if (!isNaN(parsedEndDate.getTime())) {
+          // Add one day to include the end date fully
+          parsedEndDate.setDate(parsedEndDate.getDate() + 1);
+          parsedEndDate.setMilliseconds(parsedEndDate.getMilliseconds() - 1);
+          query.date.$lte = parsedEndDate;
+        } else {
+        }
+      }
+      
+      if (Object.keys(query.date).length === 0) {
+        delete query.date;
+      }
     }
 
     if (status) query.status = status;
     if (category) query.category = category;
-    if (employeeId) query.employeeId = employeeId;
-
-    // Pagination
-    const skip = (page - 1) * limit;
+    
+    if (!req.user.isAdmin) {
+      query.employeeId = req.user._id;
+    } else if (employeeId && mongoose.Types.ObjectId.isValid(employeeId)) {
+      query.employeeId = new mongoose.Types.ObjectId(employeeId);
+    }
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 10;
+    const skip = (pageNum - 1) * limitNum;
 
     // Get total count for pagination
     const totalCount = await Expenditure.countDocuments(query);
@@ -94,7 +118,7 @@ exports.getAllExpenditures = async (req, res) => {
     const expenditures = await Expenditure.find(query)
       .sort({ date: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(limitNum)
       .populate('employeeId', 'name email')
       .populate('approvedBy', 'name email');
 
@@ -102,8 +126,8 @@ exports.getAllExpenditures = async (req, res) => {
       success: true,
       count: expenditures.length,
       totalCount,
-      totalPages: Math.ceil(totalCount / limit),
-      currentPage: parseInt(page),
+      totalPages: Math.ceil(totalCount / limitNum),
+      currentPage: pageNum,
       data: expenditures
     });
   } catch (error) {
@@ -341,41 +365,52 @@ exports.approveExpenditure = async (req, res) => {
 exports.getExpenditureStatistics = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-
     const totalAmount = await Expenditure.getTotalExpenditures(startDate, endDate);
-    
     const categorySummary = await Expenditure.getExpendituresByCategory(startDate, endDate);
+    const categoriesTotal = categorySummary.reduce((sum, category) => sum + category.totalAmount, 0);
+    if (Math.abs(totalAmount - categoriesTotal) > 1) {
+      console.warn("WARNING: Total amount", totalAmount, "doesn't match sum of categories", categoriesTotal);
+    }
     
     const employeeSummary = await Expenditure.getExpendituresByEmployee(startDate, endDate);
     
-    const pendingCount = await Expenditure.countDocuments({ 
-      status: 'pending'
-    });
+    const pendingQuery = { status: 'pending' };
+    if (startDate || endDate) {
+      pendingQuery.date = {};
+      if (startDate) pendingQuery.date.$gte = new Date(startDate);
+      if (endDate) {
+        const endDateObj = new Date(endDate);
+        endDateObj.setDate(endDateObj.getDate() + 1);
+        endDateObj.setMilliseconds(endDateObj.getMilliseconds() - 1);
+        pendingQuery.date.$lte = endDateObj;
+      }
+    }
     
-    const pendingExpenditures = await Expenditure.find({ status: 'pending' })
+    const pendingCount = await Expenditure.countDocuments(pendingQuery);
+    
+    const pendingExpenditures = await Expenditure.find(pendingQuery)
       .sort({ date: -1 })
       .limit(10)
       .populate('employeeId', 'name email');
     
-    const autoApprovedCount = await Expenditure.countDocuments({
-      status: 'approved',
-      amount: { $lt: 100 },
-      manuallyApproved: { $ne: true }
-    });
+    // Get monthly data for trends
+    const monthlyData = await getMonthlyData(startDate, endDate);
 
+    // Construct response
+    const responseData = {
+      totalAmount,
+      categorySummary,
+      employeeSummary,
+      pendingCount,
+      pendingExpenditures,
+      monthlyData
+    };
+    
     return res.status(200).json({
       success: true,
-      data: {
-        totalAmount,
-        categorySummary,
-        employeeSummary,
-        pendingCount,
-        pendingExpenditures, 
-        autoApprovedCount
-      }
+      data: responseData
     });
   } catch (error) {
-    console.error('Error fetching expenditure statistics:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -383,3 +418,68 @@ exports.getExpenditureStatistics = async (req, res) => {
     });
   }
 };
+
+async function getMonthlyData(startDate, endDate) {
+  // Default to last 12 months if no dates provided
+  let start = startDate ? new Date(startDate) : new Date();
+  start.setFullYear(start.getFullYear() - 1);
+  start.setDate(1); // First day of month
+  start.setHours(0, 0, 0, 0);
+  
+  let end = endDate ? new Date(endDate) : new Date();
+  end.setDate(end.getDate() + 1); // Include the full end date
+  end.setHours(0, 0, 0, 0);
+  
+  // Generate array of month ranges
+  const months = [];
+  let currentDate = new Date(start);
+  
+  while (currentDate < end) {
+    const monthStart = new Date(currentDate);
+    
+    // Move to first day of next month
+    currentDate.setMonth(currentDate.getMonth() + 1);
+    
+    // End of month is day before first day of next month
+    const monthEnd = new Date(currentDate);
+    monthEnd.setMilliseconds(monthEnd.getMilliseconds() - 1);
+    
+    // Only include if month end is before or equal to the overall end date
+    if (monthEnd <= end) {
+      months.push({
+        start: new Date(monthStart),
+        end: new Date(monthEnd),
+        label: monthStart.toLocaleString('default', { month: 'short', year: 'numeric' })
+      });
+    }
+  }
+  
+  // Query for each month's data
+  const monthlyData = [];
+  
+  for (const month of months) {
+    const result = await Expenditure.aggregate([
+      {
+        $match: {
+          date: { $gte: month.start, $lte: month.end },
+          status: { $ne: 'rejected' }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: "$amount" },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    
+    monthlyData.push({
+      month: month.label,
+      totalAmount: result.length > 0 ? result[0].totalAmount : 0,
+      count: result.length > 0 ? result[0].count : 0
+    });
+  }
+  
+  return monthlyData;
+}

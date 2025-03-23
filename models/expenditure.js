@@ -59,17 +59,21 @@ const expenditureSchema = new Schema({
   timestamps: true
 });
 
+
 expenditureSchema.statics.getTotalExpenditures = async function(startDate, endDate) {
-  const match = {};
+  const match = { status: { $ne: 'rejected' } };
   
   if (startDate || endDate) {
     match.date = {};
     if (startDate) match.date.$gte = new Date(startDate);
-    if (endDate) match.date.$lte = new Date(endDate);
+    if (endDate) {
+      const endDateObj = new Date(endDate);
+      endDateObj.setDate(endDateObj.getDate() + 1);
+      endDateObj.setMilliseconds(endDateObj.getMilliseconds() - 1);
+      match.date.$lte = endDateObj;
+    }
   }
   
-  // Only include approved expenditures
-  match.status = 'approved';
   
   const result = await this.aggregate([
     { $match: match },
@@ -81,21 +85,27 @@ expenditureSchema.statics.getTotalExpenditures = async function(startDate, endDa
     }
   ]);
   
-  return result.length > 0 ? result[0].totalAmount : 0;
+  const total = result.length > 0 ? result[0].totalAmount : 0;
+  return total;
 };
 
+
 expenditureSchema.statics.getExpendituresByCategory = async function(startDate, endDate) {
-  const match = {};
+  const match = { status: { $ne: 'rejected' } };
   
   if (startDate || endDate) {
     match.date = {};
     if (startDate) match.date.$gte = new Date(startDate);
-    if (endDate) match.date.$lte = new Date(endDate);
+    if (endDate) {
+      const endDateObj = new Date(endDate);
+      endDateObj.setDate(endDateObj.getDate() + 1);
+      endDateObj.setMilliseconds(endDateObj.getMilliseconds() - 1);
+      match.date.$lte = endDateObj;
+    }
   }
   
-  match.status = { $ne: 'rejected' };
   
-  return this.aggregate([
+  const result = await this.aggregate([
     { $match: match },
     {
       $group: {
@@ -114,7 +124,10 @@ expenditureSchema.statics.getExpendituresByCategory = async function(startDate, 
     },
     { $sort: { totalAmount: -1 } }
   ]);
+  
+  return result;
 };
+ 
 
 expenditureSchema.statics.getExpendituresByEmployee = async function(startDate, endDate) {
   const match = {};
@@ -148,4 +161,10 @@ expenditureSchema.statics.getExpendituresByEmployee = async function(startDate, 
   ]);
 };
 
-module.exports = mongoose.model('Expenditure', expenditureSchema);
+// Adding an index to improve query performance
+expenditureSchema.index({ employeeId: 1, date: -1 });
+expenditureSchema.index({ category: 1, date: -1 });
+expenditureSchema.index({ status: 1 });
+
+const Expenditure = mongoose.model('Expenditure', expenditureSchema);
+module.exports = Expenditure;

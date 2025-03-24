@@ -61,7 +61,7 @@ const expenditureSchema = new Schema({
 
 
 expenditureSchema.statics.getTotalExpenditures = async function(startDate, endDate) {
-  const match = { status: { $ne: 'rejected' } };
+  const match = { status: 'approved' };
   
   if (startDate || endDate) {
     match.date = {};
@@ -73,8 +73,7 @@ expenditureSchema.statics.getTotalExpenditures = async function(startDate, endDa
       match.date.$lte = endDateObj;
     }
   }
-  
-  
+    
   const result = await this.aggregate([
     { $match: match },
     {
@@ -89,9 +88,8 @@ expenditureSchema.statics.getTotalExpenditures = async function(startDate, endDa
   return total;
 };
 
-
 expenditureSchema.statics.getExpendituresByCategory = async function(startDate, endDate) {
-  const match = { status: { $ne: 'rejected' } };
+  const match = { status: 'approved' };
   
   if (startDate || endDate) {
     match.date = {};
@@ -103,8 +101,7 @@ expenditureSchema.statics.getExpendituresByCategory = async function(startDate, 
       match.date.$lte = endDateObj;
     }
   }
-  
-  
+    
   const result = await this.aggregate([
     { $match: match },
     {
@@ -130,12 +127,17 @@ expenditureSchema.statics.getExpendituresByCategory = async function(startDate, 
  
 
 expenditureSchema.statics.getExpendituresByEmployee = async function(startDate, endDate) {
-  const match = {};
+  const match = { status: 'approved' };
   
   if (startDate || endDate) {
     match.date = {};
     if (startDate) match.date.$gte = new Date(startDate);
-    if (endDate) match.date.$lte = new Date(endDate);
+    if (endDate) {
+      const endDateObj = new Date(endDate);
+      endDateObj.setDate(endDateObj.getDate() + 1);
+      endDateObj.setMilliseconds(endDateObj.getMilliseconds() - 1);
+      match.date.$lte = endDateObj;
+    }
   }
   
   return this.aggregate([
@@ -161,7 +163,7 @@ expenditureSchema.statics.getExpendituresByEmployee = async function(startDate, 
   ]);
 };
 
-// Adding an index to improve query performance
+
 expenditureSchema.index({ employeeId: 1, date: -1 });
 expenditureSchema.index({ category: 1, date: -1 });
 expenditureSchema.index({ status: 1 });

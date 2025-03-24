@@ -1,6 +1,9 @@
 const Expenditure = require('../models/expenditure');
 const mongoose = require('mongoose');
 
+
+const roundCurrency = (value) => Math.round(value);
+
 exports.createExpenditure = async (req, res) => {
   try {
     const { 
@@ -339,13 +342,15 @@ exports.approveExpenditure = async (req, res) => {
       });
     }
 
-    // Update the expenditure
     expenditure.status = 'approved';
     expenditure.approvedBy = req.user._id;
     expenditure.approvalDate = new Date();
     expenditure.manuallyApproved = true;
 
     await expenditure.save();
+    
+    const Report = mongoose.model('Report');
+    await Report.addExpenditureToReport(expenditure, req.user._id);
 
     return res.status(200).json({
       success: true,
@@ -365,15 +370,30 @@ exports.approveExpenditure = async (req, res) => {
 exports.getExpenditureStatistics = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const totalAmount = await Expenditure.getTotalExpenditures(startDate, endDate);
-    const categorySummary = await Expenditure.getExpendituresByCategory(startDate, endDate);
+    
+    // Only get total for approved expenditures
+    const totalAmount = roundCurrency(await Expenditure.getTotalExpenditures(startDate, endDate));
+    
+    const rawCategorySummary = await Expenditure.getExpendituresByCategory(startDate, endDate);
+    
+    const categorySummary = rawCategorySummary.map(category => ({
+      ...category,
+      totalAmount: roundCurrency(category.totalAmount)
+    }));
+    
     const categoriesTotal = categorySummary.reduce((sum, category) => sum + category.totalAmount, 0);
+    
     if (Math.abs(totalAmount - categoriesTotal) > 1) {
       console.warn("WARNING: Total amount", totalAmount, "doesn't match sum of categories", categoriesTotal);
     }
     
-    const employeeSummary = await Expenditure.getExpendituresByEmployee(startDate, endDate);
+    const rawEmployeeSummary = await Expenditure.getExpendituresByEmployee(startDate, endDate);
+    const employeeSummary = rawEmployeeSummary.map(employee => ({
+      ...employee,
+      totalAmount: roundCurrency(employee.totalAmount)
+    }));
     
+    // Get pending approvals
     const pendingQuery = { status: 'pending' };
     if (startDate || endDate) {
       pendingQuery.date = {};
@@ -393,16 +413,32 @@ exports.getExpenditureStatistics = async (req, res) => {
       .limit(10)
       .populate('employeeId', 'name email');
     
-    // Get monthly data for trends
-    const monthlyData = await getMonthlyData(startDate, endDate);
+    const roundedPendingExpenditures = pendingExpenditures.map(exp => {
+      const expObj = exp.toObject();
+      expObj.amount = roundCurrency(expObj.amount);
+      return expObj;
+    });
+    
+    const pendingAmount = roundCurrency(
+      await Expenditure.aggregate([
+        { $match: pendingQuery },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+      ]).then(result => result.length > 0 ? result[0].total : 0)
+    );
+    
+    const rawMonthlyData = await getMonthlyData(startDate, endDate);
+    const monthlyData = rawMonthlyData.map(month => ({
+      ...month,
+      totalAmount: roundCurrency(month.totalAmount)
+    }));
 
-    // Construct response
     const responseData = {
       totalAmount,
+      pendingAmount,
       categorySummary,
       employeeSummary,
       pendingCount,
-      pendingExpenditures,
+      pendingExpenditures: roundedPendingExpenditures,
       monthlyData
     };
     
@@ -420,31 +456,26 @@ exports.getExpenditureStatistics = async (req, res) => {
 };
 
 async function getMonthlyData(startDate, endDate) {
-  // Default to last 12 months if no dates provided
   let start = startDate ? new Date(startDate) : new Date();
   start.setFullYear(start.getFullYear() - 1);
-  start.setDate(1); // First day of month
+  start.setDate(1); 
   start.setHours(0, 0, 0, 0);
   
   let end = endDate ? new Date(endDate) : new Date();
-  end.setDate(end.getDate() + 1); // Include the full end date
+  end.setDate(end.getDate() + 1); 
   end.setHours(0, 0, 0, 0);
   
-  // Generate array of month ranges
   const months = [];
   let currentDate = new Date(start);
   
   while (currentDate < end) {
     const monthStart = new Date(currentDate);
     
-    // Move to first day of next month
     currentDate.setMonth(currentDate.getMonth() + 1);
     
-    // End of month is day before first day of next month
     const monthEnd = new Date(currentDate);
     monthEnd.setMilliseconds(monthEnd.getMilliseconds() - 1);
     
-    // Only include if month end is before or equal to the overall end date
     if (monthEnd <= end) {
       months.push({
         start: new Date(monthStart),
@@ -454,7 +485,6 @@ async function getMonthlyData(startDate, endDate) {
     }
   }
   
-  // Query for each month's data
   const monthlyData = [];
   
   for (const month of months) {
@@ -470,6 +500,13 @@ async function getMonthlyData(startDate, endDate) {
           _id: null,
           totalAmount: { $sum: "$amount" },
           count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          totalAmount: { $round: ["$totalAmount", 0] },
+          count: 1
         }
       }
     ]);

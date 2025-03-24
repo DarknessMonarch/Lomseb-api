@@ -3,7 +3,6 @@
   const Product = require('../models/product');
   const { createObjectCsvStringifier } = require('csv-writer');
 
-  // Get sales reports
   exports.getSalesReports = async (req, res) => {
     try {
       const { 
@@ -34,7 +33,6 @@
     }
   };
 
-  // Get product reports
   exports.getProductReports = async (req, res) => {
     try {
       const { 

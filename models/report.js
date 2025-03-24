@@ -137,15 +137,21 @@ const reportSchema = new Schema({
   categories: {
     type: Map,
     of: categoryDetailSchema,
-    default: {}
+    default: () => new Map()
   },
   expenditureCategories: { // Added expenditure categories mapping
     type: Map,
-    of: {
-      count: Number,
-      amount: Number
-    },
-    default: {}
+    of: new Schema({
+      count: {
+        type: Number,
+        default: 0
+      },
+      amount: {
+        type: Number,
+        default: 0
+      }
+    }, { _id: false }),
+    default: () => new Map()
   },
   paymentMethod: {
     type: String,
@@ -177,12 +183,27 @@ const reportSchema = new Schema({
   timestamps: true
 });
 
+// Update pre-save hook to round values
+reportSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  // Calculate total without decimal places
+  const subtotal = this.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  this.total = Math.round(subtotal - this.discount);
+  next();
+});
+
+// Virtual for subtotal with rounding
+reportSchema.virtual('subtotal').get(function() {
+  const subtotal = this.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  return Math.round(subtotal);
+});
+
 reportSchema.statics.getSalesReports = async function({ 
   startDate, 
   endDate, 
   period = 'weekly', 
   category = null,
-  includeExpenditures = false
+  includeExpenditures = true
 }) {
   const match = {};
   
@@ -192,12 +213,10 @@ reportSchema.statics.getSalesReports = async function({
     if (endDate) match.date.$lte = new Date(endDate);
   }
   
-  // Category filtering
   if (category) {
     match['categories.' + category] = { $exists: true };
   }
   
-  // Set the grouping based on the period
   let dateFormat;
   switch (period.toLowerCase()) {
     case 'daily':
@@ -234,7 +253,7 @@ reportSchema.statics.getSalesReports = async function({
     { 
       $group: {
         _id: dateFormat,
-        totalRevenue: { $sum: { $subtract: ["$totalRevenue", { $cond: [includeExpenditures, "$totalExpenditures", 0] }] } },
+        totalRevenue: { $sum: "$totalRevenue" },
         totalCost: { $sum: "$totalCost" },
         totalProfit: { $sum: "$totalProfit" },
         orderCount: { $sum: 1 },
@@ -249,15 +268,15 @@ reportSchema.statics.getSalesReports = async function({
     pipeline[1].$group.netProfit = { $sum: "$netProfit" };
   }
   
-  // Sort and project fields
   pipeline.push(
     { $sort: { _id: 1 } },
     {
       $project: {
         period: "$_id",
-        totalRevenue: 1,
-        totalCost: 1,
-        totalProfit: 1,
+        totalRevenue: { $round: ["$totalRevenue", 0] },
+        totalCost: { $round: ["$totalCost", 0] },
+        totalProfit: { $round: ["$totalProfit", 0] },
+        netRevenue: { $round: [{ $subtract: ["$totalRevenue", "$totalExpenditures"] }, 0] },
         orderCount: 1,
         earliestDate: 1,
         latestDate: 1,
@@ -266,10 +285,9 @@ reportSchema.statics.getSalesReports = async function({
     }
   );
   
-  // Add expenditure fields to projection if requested
   if (includeExpenditures) {
-    pipeline[pipeline.length - 1].$project.totalExpenditures = 1;
-    pipeline[pipeline.length - 1].$project.netProfit = 1;
+    pipeline[pipeline.length - 1].$project.totalExpenditures = { $round: ["$totalExpenditures", 0] };
+    pipeline[pipeline.length - 1].$project.netProfit = { $round: ["$netProfit", 0] };
   }
   
   // Perform aggregation
@@ -377,8 +395,11 @@ reportSchema.statics.getProductReports = async function({
     const inventory = inventoryMap.get(productId) || { stock: 0, unit: 'pcs' };
     
     const currentSales = item.totalSales;
-    const growthRate = previousSales > 0 ? 
+    let growthRate = previousSales > 0 ? 
       ((currentSales - previousSales) / previousSales) * 100 : 0;
+    
+    // Round the values
+    growthRate = Math.round(growthRate * 10) / 10; // Round to 1 decimal place
     
     return {
       id: item._id.productId,
@@ -386,8 +407,8 @@ reportSchema.statics.getProductReports = async function({
       productID: item._id.productID,
       category: item._id.category,
       quantitySold: item.totalQuantity,
-      totalSales: item.totalSales,
-      totalProfit: item.totalProfit,
+      totalSales: Math.round(item.totalSales),
+      totalProfit: Math.round(item.totalProfit),
       growthRate: growthRate,
       stock: inventory.stock,
       unit: inventory.unit
@@ -495,10 +516,10 @@ reportSchema.statics.getCategoryReports = async function({
       
     return {
       name: category._id,
-      totalSales: category.totalSales,
-      totalProfit: category.totalProfit,
+      totalSales: Math.round(category.totalSales),
+      totalProfit: Math.round(category.totalProfit),
       count: category.count,
-      growthRate: growthRate
+      growthRate: Math.round(growthRate * 10) / 10 // Round to 1 decimal place
     };
   });
   
@@ -533,10 +554,10 @@ reportSchema.statics.getPaymentMethodReports = async function({
     {
       $project: {
         paymentMethod: "$_id",
-        totalRevenue: 1,
-        totalProfit: 1,
+        totalRevenue: { $round: ["$totalRevenue", 0] },
+        totalProfit: { $round: ["$totalProfit", 0] },
         count: 1,
-        averageOrderValue: 1,
+        averageOrderValue: { $round: ["$averageOrderValue", 0] },
         _id: 0
       }
     }
@@ -545,7 +566,7 @@ reportSchema.statics.getPaymentMethodReports = async function({
   return result;
 };
 
-// Get expenditure reports - New method
+// Get expenditure reports - With rounding
 reportSchema.statics.getExpenditureReports = async function({
   startDate,
   endDate,
@@ -619,7 +640,7 @@ reportSchema.statics.getExpenditureReports = async function({
     {
       $project: {
         period: "$_id",
-        totalExpenditures: 1,
+        totalExpenditures: { $round: ["$totalExpenditures", 0] },
         expenditureCount: 1,
         earliestDate: 1,
         latestDate: 1,
@@ -631,7 +652,7 @@ reportSchema.statics.getExpenditureReports = async function({
   return result;
 };
 
-// Get expenditure category reports - New method
+// Get expenditure category reports - With rounding
 reportSchema.statics.getExpenditureCategoryReports = async function({
   startDate,
   endDate,
@@ -665,7 +686,7 @@ reportSchema.statics.getExpenditureCategoryReports = async function({
     {
       $project: {
         category: "$_id",
-        totalAmount: 1,
+        totalAmount: { $round: ["$totalAmount", 0] },
         count: 1,
         _id: 0
       }
@@ -675,7 +696,7 @@ reportSchema.statics.getExpenditureCategoryReports = async function({
   return result;
 };
 
-// Get inventory valuation
+// Get inventory valuation with rounding
 reportSchema.statics.getInventoryValuationReport = async function() {
   const Product = mongoose.model('Product');
   
@@ -691,12 +712,12 @@ reportSchema.statics.getInventoryValuationReport = async function() {
     }
   );
   
-  // Calculate total value and group by category
+  // Calculate total value and group by category with rounding
   let totalValue = 0;
   const categoryValues = {};
   
   products.forEach(product => {
-    const itemValue = product.quantity * product.buyingPrice;
+    const itemValue = Math.round(product.quantity * product.buyingPrice);
     totalValue += itemValue;
     
     if (!categoryValues[product.category]) {
@@ -710,16 +731,16 @@ reportSchema.statics.getInventoryValuationReport = async function() {
     categoryValues[product.category].value += itemValue;
   });
   
-  // Prepare category breakdown
+  // Prepare category breakdown with rounded percentages
   const categoryBreakdown = Object.keys(categoryValues).map(category => ({
     category,
     productCount: categoryValues[category].count,
     value: categoryValues[category].value,
-    percentage: (categoryValues[category].value / totalValue) * 100
+    percentage: Math.round((categoryValues[category].value / totalValue) * 1000) / 10 // Round to 1 decimal place
   }));
   
   return {
-    totalValue,
+    totalValue: Math.round(totalValue),
     categoryBreakdown,
     productCount: products.length,
     lowStockCount: products.filter(p => p.quantity <= 5).length,
@@ -728,10 +749,7 @@ reportSchema.statics.getInventoryValuationReport = async function() {
   };
 };
 
-// Export sales reports to various formats
 reportSchema.statics.exportSalesReports = async function(options) {
-  // This would typically generate a CSV, Excel or PDF file
-  // For now, we'll just fetch the data that would be exported
   const data = await this.getSalesReports(options);
   return {
     success: true,
@@ -761,6 +779,8 @@ reportSchema.statics.addExpenditureToReport = async function(expenditure, userId
     
     latestReport.expenditures.push(expenditureItem);
     latestReport.totalExpenditures += expenditure.amount;
+    
+    // CHANGE: Subtract expenditure from totalRevenue 
     latestReport.totalRevenue -= expenditure.amount;
     latestReport.netProfit = latestReport.totalProfit - latestReport.totalExpenditures;
     
@@ -782,7 +802,7 @@ reportSchema.statics.addExpenditureToReport = async function(expenditure, userId
         category: expenditure.category,
         employeeName: expenditure.employeeName
       }],
-      totalRevenue: 0,
+      totalRevenue: -expenditure.amount, // CHANGE: Start with negative revenue
       totalCost: 0,
       totalProfit: 0,
       totalExpenditures: expenditure.amount,
@@ -852,11 +872,12 @@ reportSchema.statics.getProfitAndLossReport = async function({
     { 
       $group: {
         _id: dateFormat,
-        totalRevenue: { $sum: { $subtract: ["$totalRevenue", "$totalExpenditures"] } },
+        totalRevenue: { $sum: "$totalRevenue" },
         totalCost: { $sum: "$totalCost" },
         grossProfit: { $sum: "$totalProfit" },
         totalExpenditures: { $sum: "$totalExpenditures" },
         netProfit: { $sum: "$netProfit" },
+        netRevenue: { $sum: { $subtract: ["$totalRevenue", "$totalExpenditures"] } },
         reportCount: { $sum: 1 }
       }
     },
@@ -866,23 +887,30 @@ reportSchema.statics.getProfitAndLossReport = async function({
     {
       $project: {
         period: "$_id",
-        totalRevenue: 1,
-        totalCost: 1,
-        grossProfit: 1,
-        totalExpenditures: 1,
-        netProfit: 1,
+        totalRevenue: { $round: ["$totalRevenue", 0] },
+        totalCost: { $round: ["$totalCost", 0] },
+        grossProfit: { $round: ["$grossProfit", 0] },
+        netRevenue: { $round: ["$netRevenue", 0] },
+        totalExpenditures: { $round: ["$totalExpenditures", 0] },
+        netProfit: { $round: ["$netProfit", 0] },
         grossMargin: { 
-          $cond: [
-            { $eq: ["$totalRevenue", 0] },
-            0,
-            { $multiply: [{ $divide: ["$grossProfit", "$totalRevenue"] }, 100] }
+          $round: [
+            { $cond: [
+              { $eq: ["$totalRevenue", 0] },
+              0,
+              { $multiply: [{ $divide: ["$grossProfit", "$totalRevenue"] }, 100] }
+            ]},
+            1
           ]
         },
         netMargin: { 
-          $cond: [
-            { $eq: ["$totalRevenue", 0] },
-            0,
-            { $multiply: [{ $divide: ["$netProfit", "$totalRevenue"] }, 100] }
+          $round: [
+            { $cond: [
+              { $eq: ["$totalRevenue", 0] },
+              0,
+              { $multiply: [{ $divide: ["$netProfit", "$totalRevenue"] }, 100] }
+            ]},
+            1
           ]
         },
         _id: 0

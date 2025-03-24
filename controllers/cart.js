@@ -4,13 +4,10 @@ const Product = require('../models/product');
 const debtController = require('../controllers/debt');
 const Report = require('../models/report');
 
-// Get user's active cart
 exports.getCart = async (req, res) => {
   try {
-    // Get user ID from auth middleware
     const userId = req.user.id;
 
-    // Find or create cart
     let cart = await Cart.findOne({
       user: userId,
       status: 'active'
@@ -32,14 +29,12 @@ exports.getCart = async (req, res) => {
         continue;
       }
 
-      // Adjust quantity if greater than available
       if (item.quantity > product.quantity) {
         item.quantity = product.quantity;
         hasUpdates = true;
       }
     }
 
-    // Save cart if there were updates
     if (hasUpdates) {
       await cart.save();
     }
@@ -58,7 +53,6 @@ exports.getCart = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching cart:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch cart',
@@ -67,7 +61,6 @@ exports.getCart = async (req, res) => {
   }
 };
 
-// Add item to cart
 exports.addToCart = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -80,7 +73,6 @@ exports.addToCart = async (req, res) => {
       });
     }
 
-    // Validate product exists and has sufficient quantity
     const product = await Product.findById(productId);
 
     if (!product) {
@@ -98,7 +90,6 @@ exports.addToCart = async (req, res) => {
       });
     }
 
-    // Find or create cart
     let cart = await Cart.findOne({
       user: userId,
       status: 'active'
@@ -108,10 +99,8 @@ exports.addToCart = async (req, res) => {
       cart = new Cart({ user: userId, items: [] });
     }
 
-    // Add item to cart
     await cart.addItem(productId, parseInt(quantity));
 
-    // Return updated cart
     res.status(200).json({
       success: true,
       message: 'Product added to cart',
@@ -125,7 +114,6 @@ exports.addToCart = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error adding to cart:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to add item to cart',
@@ -159,7 +147,6 @@ exports.checkout = async (req, res) => {
       });
     }
 
-    // Verify all items are still available
     let unavailableItems = [];
     for (const item of cart.items) {
       const product = await Product.findById(item.product);
@@ -180,24 +167,15 @@ exports.checkout = async (req, res) => {
       });
     }
 
-    // Ensure payment values are proper numbers
     const paidAmount = parseFloat(amountPaid) || 0;
 
-    // Calculate remaining balance if not provided, or use the provided value
     const remainingBal =
       remainingBalance !== undefined ?
         parseFloat(remainingBalance) :
         Math.max(0, cart.total - paidAmount);
 
-    // Debug logging
-    console.log('Payment values:', {
-      paidAmount,
-      remainingBal,
-      total: cart.total,
-      condition: remainingBal > 0
-    });
 
-    // Determine payment status if not provided
+
     let paymentStat = paymentStatus || 'paid';
 
     if (!paymentStatus) {
@@ -208,35 +186,28 @@ exports.checkout = async (req, res) => {
       }
     }
 
-    // Update cart with payment information
     cart.amountPaid = paidAmount;
     cart.remainingBalance = remainingBal;
     cart.paymentStatus = paymentStat;
 
-    // Generate report data
     const reportItems = [];
     let totalCost = 0;
     let totalRevenue = cart.total;
     let totalProfit = 0;
     const categories = {};
 
-    // Prepare data for email - format items for the email template
     const emailItems = [];
 
-    // Update product quantities and collect report data
     for (const item of cart.items) {
       const product = await Product.findById(item.product);
       if (product) {
-        // Update product quantity
         product.quantity -= item.quantity;
         await product.save();
 
-        // Calculate item profit
         const itemCost = product.buyingPrice * item.quantity;
         const itemRevenue = item.price * item.quantity;
         const itemProfit = itemRevenue - itemCost;
 
-        // Add to report data
         reportItems.push({
           productId: product._id,
           productName: product.name,
@@ -251,7 +222,6 @@ exports.checkout = async (req, res) => {
           profit: itemProfit
         });
 
-        // Format for email
         emailItems.push({
           name: product.name,
           quantity: item.quantity,
@@ -259,7 +229,6 @@ exports.checkout = async (req, res) => {
           itemTotal: item.price * item.quantity
         });
 
-        // Update category stats
         if (!categories[product.category]) {
           categories[product.category] = {
             count: 0,
@@ -271,45 +240,34 @@ exports.checkout = async (req, res) => {
         categories[product.category].revenue += itemRevenue;
         categories[product.category].profit += itemProfit;
 
-        // Update total cost and profit
         totalCost += itemCost;
         totalProfit += itemProfit;
       }
     }
 
-    // Create report with payment information included
     const report = new Report({
       date: new Date(),
       items: reportItems,
       totalRevenue,
       totalCost,
       totalProfit,
+      netProfit: totalProfit, 
       categories,
       paymentMethod,
       amountPaid: paidAmount,
       remainingBalance: remainingBal,
       paymentStatus: paymentStat,
       user: userId,
-      customerInfo: customerInfo // Store customer info in the report
+      customerInfo: customerInfo
     });
 
     await report.save();
 
     let debtRecord = null;
 
-    // IMPORTANT: Create debt record if there's any remaining balance
-    // Whether partial payment or full payment with remainder
     if (remainingBal > 0) {
-      console.log('Creating debt record with:', {
-        userId,
-        reportId: report._id,
-        total: cart.total,
-        paidAmount,
-        remainingBal
-      });
 
       try {
-        // Ensure the createDebtRecord function properly handles the debt
         debtRecord = await debtController.createDebtRecord(
           userId,
           report._id,
@@ -322,13 +280,15 @@ exports.checkout = async (req, res) => {
           throw new Error('Debt record creation failed without error');
         }
 
-        console.log('Debt record created:', debtRecord);
       } catch (error) {
-        console.error('Failed to create debt record:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to create debt record',
+          error: error.message
+        });
       }
     }
 
-    // Update cart status
     cart.status = 'converted';
     await cart.save();
 
@@ -360,10 +320,15 @@ exports.checkout = async (req, res) => {
           orderDetails  
         );
       } catch (emailError) {
-        console.error('Error sending confirmation email:', emailError);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to send confirmation email',
+          error: emailError.message
+        });
       }
     } else {
-      console.warn('Skipping email confirmation - missing required customer information');
+      console.warn('No email provided for user:', user.username);      
+
     }
 
     res.status(200).json({
@@ -390,7 +355,6 @@ exports.checkout = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error during checkout:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to complete checkout',
@@ -413,7 +377,6 @@ exports.updateCartItem = async (req, res) => {
       });
     }
 
-    // Find cart
     const cart = await Cart.findOne({
       user: userId,
       status: 'active'
@@ -426,7 +389,6 @@ exports.updateCartItem = async (req, res) => {
       });
     }
 
-    // Update item quantity
     await cart.updateItemQuantity(itemId, parseInt(quantity));
 
     res.status(200).json({
@@ -442,7 +404,6 @@ exports.updateCartItem = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error updating cart item:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update cart item',
@@ -486,7 +447,6 @@ exports.removeCartItem = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error removing cart item:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to remove item from cart',
@@ -529,7 +489,6 @@ exports.clearCart = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error clearing cart:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to clear cart',
@@ -555,17 +514,14 @@ exports.getAllCarts = async (req, res) => {
       limit = 10
     } = req.query;
 
-    // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Query carts
     const carts = await Cart.find({ status })
       .populate('user', 'username email')
       .skip(skip)
       .limit(parseInt(limit))
       .sort({ updatedAt: -1 });
 
-    // Get total count
     const total = await Cart.countDocuments({ status });
 
     res.status(200).json({
@@ -577,7 +533,6 @@ exports.getAllCarts = async (req, res) => {
       data: carts
     });
   } catch (error) {
-    console.error('Error fetching carts:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch carts',
